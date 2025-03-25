@@ -75,11 +75,11 @@ workflow PIPELINE_INITIALISATION {
     Channel
         .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
         .map {
-            meta, fastq_1, fastq_2 ->
+            meta, sex, pop, fastq_1, fastq_2 ->
                 if (!fastq_2) {
-                    return [ meta.id, meta + [ single_end:true ], [ fastq_1 ] ]
+                    return [ meta.id, meta + [ single_end:true ], sex, pop, [ fastq_1 ] ]
                 } else {
-                    return [ meta.id, meta + [ single_end:false ], [ fastq_1, fastq_2 ] ]
+                    return [ meta.id, meta + [ single_end:false ], sex, pop, [ fastq_1, fastq_2 ] ]
                 }
         }
         .groupTuple()
@@ -87,8 +87,8 @@ workflow PIPELINE_INITIALISATION {
             validateInputSamplesheet(samplesheet)
         }
         .map {
-            meta, fastqs ->
-                return [ meta, fastqs.flatten() ]
+            meta, sex, pop, fastqs ->
+                return [ meta, sex, pop, fastqs.flatten() ]
         }
         .set { ch_samplesheet }
 
@@ -112,11 +112,11 @@ workflow PIPELINE_COMPLETION {
     outdir          //    path: Path to output directory where results will be published
     monochrome_logs // boolean: Disable ANSI colour codes in log output
     hook_url        //  string: hook URL for notifications
-    multiqc_report  //  string: Path to MultiQC report
+    // multiqc_report  //  string: Path to MultiQC report
 
     main:
     summary_params = paramsSummaryMap(workflow, parameters_schema: "nextflow_schema.json")
-    def multiqc_reports = multiqc_report.toList()
+    // def multiqc_reports = multiqc_report.toList()
 
     //
     // Completion email and summary
@@ -130,7 +130,6 @@ workflow PIPELINE_COMPLETION {
                 plaintext_email,
                 outdir,
                 monochrome_logs,
-                multiqc_reports.getVal(),
             )
         }
 
@@ -161,7 +160,7 @@ def validateInputParameters() {
 // Validate channels from input samplesheet
 //
 def validateInputSamplesheet(input) {
-    def (metas, fastqs) = input[1..2]
+    def (metas, sex, pop, fastqs) = input[1..4]
 
     // Check that multiple runs of the same sample are of the same datatype i.e. single-end / paired-end
     def endedness_ok = metas.collect{ meta -> meta.single_end }.unique().size == 1
@@ -169,8 +168,9 @@ def validateInputSamplesheet(input) {
         error("Please check input samplesheet -> Multiple runs of a sample must be of the same datatype i.e. single-end or paired-end: ${metas[0].id}")
     }
 
-    return [ metas[0], fastqs ]
+    return [ metas[0], sex, pop, fastqs ]
 }
+
 //
 // Get attribute from genome config file e.g. fasta
 //
@@ -261,4 +261,3 @@ def methodsDescriptionText(mqc_methods_yaml) {
 
     return description_html.toString()
 }
-

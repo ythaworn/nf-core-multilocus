@@ -53,8 +53,8 @@ workflow NFCORE_MULTILOCUS {
     MULTILOCUS (
         samplesheet
     )
-    emit:
-    multiqc_report = MULTILOCUS.out.multiqc_report // channel: /path/to/multiqc_report.html
+//    emit:
+//    multiqc_report = MULTILOCUS.out.multiqc_report // channel: /path/to/multiqc_report.html
 }
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -80,21 +80,22 @@ workflow {
     //
     // WORKFLOW: Run main workflow
     //
+    // PIPELINE_INITIALISATION.out.samplesheet | map { it -> println it}
     NFCORE_MULTILOCUS (
-        PIPELINE_INITIALISATION.out.samplesheet
+       PIPELINE_INITIALISATION.out.samplesheet
     )
-    //
+
     // SUBWORKFLOW: Run completion tasks
     //
-    PIPELINE_COMPLETION (
-        params.email,
-        params.email_on_fail,
-        params.plaintext_email,
-        params.outdir,
-        params.monochrome_logs,
-        params.hook_url,
-        NFCORE_MULTILOCUS.out.multiqc_report
-    )
+//    PIPELINE_COMPLETION (
+//        params.email,
+//        params.email_on_fail,
+//        params.plaintext_email,
+//        params.outdir,
+//        params.monochrome_logs,
+//        params.hook_url,
+//        NFCORE_MULTILOCUS.out.multiqc_report
+//    )
 }
 
 /*
