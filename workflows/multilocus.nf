@@ -13,20 +13,21 @@ include { SAMTOOLS_MARKDUP } from '../modules/nf-core/samtools/markdup/main'
 include { SAMTOOLS_INDEX } from '../modules/nf-core/samtools/index/main'
 
 include { BEDTOOLS_GENOMECOV } from '../modules/nf-core/bedtools/genomecov/main'
-//include { BEDTOOLS_GENOMECOV } from '../modules/local/bedtools/genomecov'
 include { BEDTOOLS_MERGE } from '../modules/nf-core/bedtools/merge/main'
 
 include { GAWK } from '../modules/nf-core/gawk/main'
 // include { GUNZIP as GZIP } from '../modules/nf-core/gunzip/main'
 include { GUNZIP as GZIP } from '../modules/local/gunzip/main'
 
-include { BCFTOOLS_MPILEUP       } from '../modules/nf-core/bcftools/mpileup/main'
-include { BCFTOOLS_CALL          } from '../modules/nf-core/bcftools/call/main'
-include { BCFTOOLS_VIEW } from '../modules/nf-core/bcftools/view/main'
-include { BCFTOOLS_FILTER        } from '../modules/nf-core/bcftools/filter/main'
+//include { BCFTOOLS_MPILEUP       } from '../modules/nf-core/bcftools/mpileup/main'
+include { BCFTOOLS_MPILEUP       } from '../modules/local/bcftools/mpileup/main'
+// include { BCFTOOLS_CALL          } from '../modules/nf-core/bcftools/call/main'
+// include { BCFTOOLS_VIEW } from '../modules/nf-core/bcftools/view/main'
+include { BCFTOOLS_FILTER as BCFTOOLS_FILTER_SITES       } from '../modules/nf-core/bcftools/filter/main'
+include { BCFTOOLS_FILTER as BCFTOOLS_FILTER_SAMPLES     } from '../modules/nf-core/bcftools/filter/main'
+include { BCFTOOLS_VIEW          } from '../modules/nf-core/bcftools/view/main'
+include { BCFTOOLS_STATS         } from '../modules/local/bcftools/stats/main'
 include { BCFTOOLS_CONSENSUS     } from '../modules/nf-core/bcftools/consensus/main'
-
-include { TABIX_TABIX } from '../modules/nf-core/tabix/tabix/main'
 
 include { paramsSummaryMap       } from 'plugin/nf-schema'
 // include { paramsSummaryMultiqc   } from '../subworkflows/nf-core/utils_nfcore_pipeline'
@@ -51,8 +52,9 @@ workflow MULTILOCUS {
     // Create input channels
     //ch_input_fasta = Channel.empty()
     //ch_input_reads = Channel.empty()
-    //ch_samplesheet | map { it -> println it}
-    ch_ref = Channel.of([params.refname, params.ref])
+    //ch_samplesheet.map { it -> println it}
+    ch_ref = Channel.value([params.refname, params.ref])
+
     //
     // MODULE: Run bwa index
     //
@@ -61,15 +63,15 @@ workflow MULTILOCUS {
     )
     // BWA_INDEX.out.index.view()
 
-    ch_id = ch_samplesheet.map { it -> it[0].id }
-    ch_sex = ch_samplesheet.map { it -> it[1] }
-    ch_pop = ch_samplesheet.map { it -> it[2] }
+    //ch_id = ch_samplesheet.map { it -> it[0].id }
+    //ch_sex = ch_samplesheet.map { it -> it[1] }
+    //ch_pop = ch_samplesheet.map { it -> it[2] }
     ch_reads = ch_samplesheet.map { it -> [it[0], it[3]] }
 
-    // ch_id.view()
-    // ch_sex.view()
-    // ch_pop.view()
-    // ch_reads.view()
+    //ch_id.view()
+    //ch_sex.view()
+    //ch_pop.view()
+    //ch_reads.view()
 
     //
     // MODULE: Read mapping
@@ -137,8 +139,73 @@ workflow MULTILOCUS {
     )
 
 
-    // variant calling
+    // variant calling per population
+    // SAMTOOLS_MARKDUP.out.bam.view()
+
+    // ch_samplesheet.groupTuple(by: 2).view()
+
+    // SAMTOOLS_MARKDUP.out.bam.view()
+
+    // add info from ch_samplesheet to SAMTOOLS_MARKDUP.out.bam by sample id (by: 0)
+    // then group by pop (by: 2)
+    ch_pop = ch_samplesheet.map { it -> [it[0], it[2]] }
+    // ch_pop.view()
+
+    // SAMTOOLS_MARKDUP.out.bam.combine(ch_pop, by: 0).view()
+    // SAMTOOLS_MARKDUP.out.bam.combine(ch_pop, by: 0).groupTuple(by: 2).view()
+    // ch_bam_pop = SAMTOOLS_MARKDUP.out.bam.combine(ch_pop, by: 0).groupTuple(by: 2).map { it -> [ it[0], it[1], [] ] }
+
+    // use pop as id instead of sample name
+    ch_bam_pop = SAMTOOLS_MARKDUP.out.bam.combine(ch_pop, by: 0).groupTuple(by: 2).map { it -> [ [id: it[2][0]], it[1], [] ] }
+
+    // ch_bam_pop.view()
+
+    // ch_bam_pop.map{ it -> it[1] }.view()
+
+    BCFTOOLS_MPILEUP (
+        ch_bam_pop,
+        ch_ref,
+        false
+    )
+
+    // mark site filter
+    ch_vcf_pop = BCFTOOLS_MPILEUP.out.vcf.combine(BCFTOOLS_MPILEUP.out.tbi, by: 0)
+    // ch_vcf_pop.view()
+
+    BCFTOOLS_FILTER_SITES (
+        ch_vcf_pop
+    )
+
+    // mark sample filter
+    ch_vcf_pop_mark_sites = BCFTOOLS_FILTER_SITES.out.vcf.combine(BCFTOOLS_FILTER_SITES.out.tbi, by: 0)
+
+    BCFTOOLS_FILTER_SAMPLES (
+        ch_vcf_pop_mark_sites
+    )
+
+    // remove sites that do not pass site-filter
+    ch_vcf_pop_mark_samples = BCFTOOLS_FILTER_SAMPLES.out.vcf.combine(BCFTOOLS_FILTER_SAMPLES.out.tbi, by: 0)
+    // ch_vcf_pop_mark_samples.view()
+
+    BCFTOOLS_VIEW (
+        ch_vcf_pop_mark_samples,
+        [], [], []
+    )
+    // TODO: site filtering requires a site mask later in bcftools consensus
+
+
+    ch_vcf_pop_filt = BCFTOOLS_VIEW.out.vcf.combine(BCFTOOLS_VIEW.out.tbi, by: 0)
+    // ch_vcf_pop_filt.view()
+
+    BCFTOOLS_STATS (
+        ch_vcf_pop_filt
+    )
+
     
+
+
+
+
 
 
     // FASTQC (
